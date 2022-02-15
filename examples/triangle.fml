@@ -1,0 +1,70 @@
+
+
+/**
+ * Fills the array 'output' with value 1 starting from mid to
+ * left if dir == -1, or to right if direction is 1 rem-times.
+ * mid itself is not included. 
+ */
+function fill(rem, dir, output, mid) ->
+begin
+    if rem <= 0 then
+        null
+    else
+    begin
+        output[mid + dir * rem] <- 1; 
+        fill(rem - 1, dir, output, mid)
+    end
+end;
+
+
+function print_arr(arr, width, height) ->
+begin
+    let i = 0;
+    while i < height do
+    begin
+        let j = 0;
+        while j < width do
+        begin
+            if arr[i][j] == 0 then print(" ") else print("*");
+            j <- j + 1
+        end;
+        print("\n");
+        i <- i + 1
+    end
+end;
+
+
+function triangle(height) ->
+begin
+    // let cnt_w = let cnt_h = 0;
+    let width = (height - 1) * 2 + 1;
+    // Index on which the middle star is
+    let mid = width / 2;
+
+    let output = array(height, array(width, 0));
+
+    let i = height - 1;
+    while i >= 0 do
+    begin
+        // Set the middle star
+        output[i][mid] <- 1;
+        // And from the middle set the neighbors
+        fill(i, -1, output[i], mid);
+        fill(i,  1, output[i], mid);
+        i <- i - 1
+    end;
+
+    print_arr(output, width, height)
+end;
+
+triangle(0);
+print("\n");
+triangle(1);
+print("\n");
+triangle(2);
+print("\n");
+triangle(3);
+print("\n");
+triangle(4);
+print("\n");
+triangle(5);

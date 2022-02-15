@@ -1,0 +1,76 @@
+
+/** Stack contructor
+ *  @param capacity - starting capacity
+ */
+function stack(capacity) ->
+    let stack = object
+    begin
+        let top = -1;
+        let data = array(capacity, 0);
+        let capacity = capacity;
+        
+        /** Returns element on top of the stack, if stack is empty returns false */
+        function peek() -> if this.top >= 0 then 
+                             this.data[this.top]
+                           else
+                            false;
+
+        /** Removes element from the top of the stack and returns it, if stack
+            is already empty returns false */
+        function pop() -> if this.top >= 0 then 
+                            this.data[(this.top <- this.top - 1) + 1] 
+                          else 
+                            false;
+
+        /** Pushes value on top of the stack, may do reallocation if capacity is full */
+        function push(val) ->
+        begin
+            this.top <- this.top + 1;
+            if this.top >= this.capacity then
+                this.reallocate();
+            this.data[this.top] <- val
+        end;
+
+        /** Resizes data array */
+        function reallocate() ->
+        begin
+            let data_tmp = array(this.capacity * 2, 0);
+            let i = 0;
+            while i < this.capacity do
+            begin
+                data_tmp[i] <- this.data[i];
+                i <- i + 1
+            end;
+            this.data <- data_tmp;
+            this.capacity <- this.capacity * 2
+        end;
+    end;
+
+let s = stack(2);
+print("Popping empty: ~\n", s.pop());
+print("Pushing 1..5\n");
+s.push(1);
+s.push(2);
+s.push(3);
+s.push(4);
+s.push(5);
+print("peek: ~\n", s.peek());
+print("pop: ~\n", s.pop());
+print("peek: ~\n", s.peek());
+print("pop: ~\n", s.pop());
+print("pop: ~\n", s.pop());
+print("pop: ~\n", s.pop());
+print("pop: ~\n", s.pop());
+
+print("Popping empty: ~\n", s.pop());
+print("Popping empty: ~\n", s.pop());
+print("Popping empty: ~\n", s.pop());
+print("Pushing 1..2\n");
+s.push(1);
+s.push(2);
+print("peek: ~\n", s.peek());
+print("pop: ~\n", s.pop());
+print("peek: ~\n", s.peek());
+print("pop: ~\n", s.pop());
+print("Popping empty: ~\n", s.pop());
+print("Peeking empty: ~\n", s.peek());

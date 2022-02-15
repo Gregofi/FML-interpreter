@@ -1,0 +1,88 @@
+let ROMAN_NUM_LEN = 13;
+let ROMAN_NUMS = array(ROMAN_NUM_LEN, 0);
+ROMAN_NUMS[0]  <- 1000;
+ROMAN_NUMS[1]  <- 900;
+ROMAN_NUMS[2]  <- 500;
+ROMAN_NUMS[3]  <- 400;
+ROMAN_NUMS[4]  <- 100;
+ROMAN_NUMS[5]  <- 90;
+ROMAN_NUMS[6]  <- 50;
+ROMAN_NUMS[7]  <- 40;
+ROMAN_NUMS[8]  <- 10;
+ROMAN_NUMS[9]  <- 9;
+ROMAN_NUMS[10] <- 5;
+ROMAN_NUMS[11] <- 4;
+ROMAN_NUMS[12] <- 1;
+
+
+function int(n) ->
+begin
+    object extends n
+    begin
+        let value = n;
+
+        function dispatch_value(val) ->
+        begin
+            if     (val == 1000) then print("M")
+            else if(val == 900)  then print("CM")
+            else if(val == 500)  then print("D")
+            else if(val == 400)  then print("CD")
+            else if(val == 100)  then print("C")
+            else if(val == 90)   then print("XC")
+            else if(val == 50)   then print("L")
+            else if(val == 40)   then print("XL")
+            else if(val == 10)   then print("X")
+            else if(val == 9)    then print("IX")
+            else if(val == 5)    then print("V")
+            else if(val == 4)    then print("IV")
+            else if(val == 1)    then print("I")
+            else false
+        end;
+
+        function print_roman() ->
+        begin
+            // Traverse all roman numerals
+            let i = 0;
+            while i < ROMAN_NUM_LEN do
+            begin
+                if this.value >= ROMAN_NUMS[i] then
+                begin
+                    this.dispatch_value(ROMAN_NUMS[i]);
+                    this.value <- this.value - ROMAN_NUMS[i]
+                end
+                else
+                    i <- i + 1;
+            end;
+        end;
+
+        function print_decimal() -> print("~", this.value);
+
+    end;
+end;
+
+function print_pair(n) -> 
+begin 
+    let x = int(n); 
+    x.print_decimal(); 
+    print(" "); 
+    x.print_roman(); 
+    print("\n")
+end;
+
+print_pair(1);
+print_pair(4);
+print_pair(5);
+print_pair(9);
+print_pair(10);
+print_pair(40);
+print_pair(50);
+print_pair(90);
+print_pair(100);
+print_pair(400);
+print_pair(500);
+print_pair(900);
+print_pair(1000);
+print_pair(6);
+print_pair(42);
+print_pair(666);
+print_pair(14000);

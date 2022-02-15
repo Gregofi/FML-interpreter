@@ -1,0 +1,19 @@
+
+
+function fibbonaci_aux(n, now, prev) ->
+begin
+    if n == 0 then prev else fibbonaci_aux(n - 1, now + prev, now)
+end;
+
+function fibbonaci(n) -> fibbonaci_aux(n, 1, 0);
+
+
+print("~ -> ~\n", 0, fibbonaci(0));
+print("~ -> ~\n", 1, fibbonaci(1));
+print("~ -> ~\n", 2, fibbonaci(2));
+print("~ -> ~\n", 3, fibbonaci(3));
+print("~ -> ~\n", 4, fibbonaci(4));
+print("~ -> ~\n", 5, fibbonaci(5));
+print("~ -> ~\n", 6, fibbonaci(6));
+print("~ -> ~\n", 7, fibbonaci(7));
+print("~ -> ~\n", 8, fibbonaci(8));
