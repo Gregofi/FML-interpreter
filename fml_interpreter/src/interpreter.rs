@@ -185,3 +185,111 @@ pub fn interpret(ast: AST) {
     let mut p = Program::new();
     p.eval(ast);
 }
+
+
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn environment() {
+        let mut program = Program::new();
+
+        program.push_env();
+        program.add_var(String::from("x"), Value::Int(1));
+        program.add_var(String::from("y"), Value::Int(2));
+        program.add_var(String::from("z"), Value::Int(3));
+        
+        assert!(std::matches!(program.fetch_var(&String::from("x")), Some(Value::Int(1))));
+        assert!(std::matches!(program.fetch_var(&String::from("y")), Some(Value::Int(2))));
+        assert!(std::matches!(program.fetch_var(&String::from("z")), Some(Value::Int(3))));
+        assert!(std::matches!(program.fetch_var(&String::from("a")), None));
+
+        program.push_env();
+        program.add_var(String::from("x"), Value::Int(10));
+        program.add_var(String::from("y"), Value::Int(20));
+        
+        assert!(std::matches!(program.fetch_var(&String::from("x")), Some(Value::Int(10))));
+        assert!(std::matches!(program.fetch_var(&String::from("y")), Some(Value::Int(20))));
+        assert!(std::matches!(program.fetch_var(&String::from("z")), Some(Value::Int(3))));
+        assert!(std::matches!(program.fetch_var(&String::from("a")), None));
+
+        program.pop_env();
+        assert!(std::matches!(program.fetch_var(&String::from("x")), Some(Value::Int(1))));
+        assert!(std::matches!(program.fetch_var(&String::from("y")), Some(Value::Int(2))));
+        assert!(std::matches!(program.fetch_var(&String::from("z")), Some(Value::Int(3))));
+        assert!(std::matches!(program.fetch_var(&String::from("a")), None));
+    }
+
+    #[test]
+    fn literals() {
+        let mut program = Program::new();
+
+        let val1 = AST::Integer(5);
+        let val2 = AST::Boolean(true);
+        let val3 = AST::Null;
+
+        assert!(std::matches!(program.eval(val1), Value::Int(5)));
+        assert!(std::matches!(program.eval(val2), Value::Boolean(true)));
+        assert!(std::matches!(program.eval(val3), Value::Unit));
+    }
+
+    #[test]
+    fn conditional() {
+        let mut program = Program::new();
+
+        let val_true = AST::Conditional{
+            condition: AST::Boolean(true).into_boxed(),
+            consequent: AST::Integer(1).into_boxed(),
+            alternative: AST::Integer(2).into_boxed()
+        };
+
+        let val_false = AST::Conditional{
+            condition: AST::Boolean(false).into_boxed(),
+            consequent: AST::Integer(1).into_boxed(),
+            alternative: AST::Integer(2).into_boxed()
+        };
+
+        assert!(std::matches!(program.eval(val_true), Value::Int(1)));
+        assert!(std::matches!(program.eval(val_false), Value::Int(2)));
+    }
+
+    #[test]
+    fn compound() {
+        let mut program = Program::new();
+
+        let compound = AST::Block([AST::Integer(1).into_boxed(), AST::Integer(2).into_boxed()].to_vec());
+
+        assert!(std::matches!(program.eval(compound), Value::Int(2)));
+    }
+
+    #[test]
+    fn var_assign() {
+        let mut program = Program::new();
+        program.push_env();
+        let decl = AST::Variable{name: String::from("a"), value: AST::Integer(5).into_boxed()};
+        program.eval(decl);
+        assert!(std::matches!(program.fetch_var(&String::from("a")), Some(Value::Int(5))));
+
+        let assign = AST::AssignVariable{name: String::from("a"), value: AST::Integer(10).into_boxed()};
+        program.eval(assign);
+        assert!(std::matches!(program.fetch_var(&String::from("a")), Some(Value::Int(10))));
+
+        // Test that the variable 'a' will remain the same after coming from a block
+        let block = AST::Block([
+            AST::Variable{name: String::from("a"), value: AST::Integer(3).into_boxed()}.into_boxed(),
+            AST::AssignVariable{name: String::from("a"), value: AST::Integer(2).into_boxed()}.into_boxed(),
+            AST::AccessVariable{name: String::from("a")}.into_boxed(),
+        ].to_vec());
+
+        // Check that the block will return the new value of variable
+        assert!(std::matches!(program.eval(block), Value::Int(2)));
+
+        // Check that the variable outside the scope retained it's value
+        assert!(std::matches!(program.fetch_var(&String::from("a")), Some(Value::Int(10))));
+
+        program.pop_env();
+    }
+}
