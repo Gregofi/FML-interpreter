@@ -1,5 +1,3 @@
-#![feature(map_try_insert)]
-
 mod interpreter;
 mod ast;
 use ast::AST;

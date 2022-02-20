@@ -68,10 +68,10 @@ impl Program {
         let top = self.envs.front_mut().expect("Missing top frame of environment.");
         /* TODO: This probably can be done with expect.
         I was however unable to do it at the time of writing this. */
-        match top.try_insert(name, val) {
-            Ok(_) => (),
+        match top.insert(name, val) {
+            None => (),
             /* TODO: Make the error message print the variable name. */
-            Err(_) => panic!("Variable was redeclared."),
+            Some(_) => panic!("Variable was redeclared."),
         }
     }
 
