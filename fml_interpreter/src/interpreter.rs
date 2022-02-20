@@ -141,8 +141,8 @@ impl Program {
 
             AST::Block(exprs) => {
                 let mut last_val: Option<Value> = None;
+                self.push_env();
                 for expr in exprs {
-                    self.push_env();
                     last_val = Some(self.eval(*expr));
                 }
                 self.pop_env();
