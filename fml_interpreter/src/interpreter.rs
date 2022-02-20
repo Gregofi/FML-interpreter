@@ -173,7 +173,10 @@ impl Program {
                 }
             },
 
-            AST::Print { format, arguments } => {self.eval_print(format, arguments); Value::Unit}
+            AST::Print { format, arguments } => {
+                self.eval_print(format, arguments); 
+                Value::Unit
+            }
         }
     }
 }
