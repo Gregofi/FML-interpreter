@@ -120,7 +120,9 @@ impl Program {
            
             AST::Array { size, value } => todo!(),
             AST::Object { extends, members } => todo!(),
-            AST::AccessVariable { name } => todo!(),
+            AST::AccessVariable { name } => {
+                *self.fetch_var(&name).expect("Variable has not been declared.")
+            },
             AST::AccessField { object, field } => todo!(),
             AST::AccessArray { array, index } => todo!(),
          
