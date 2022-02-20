@@ -1,5 +1,5 @@
 use crate::ast::AST;
-use std::{collections::HashMap, collections::LinkedList, hash::Hash};
+use std::{collections::HashMap, collections::LinkedList};
 
 #[derive(Copy, Clone)]
 enum Value {
