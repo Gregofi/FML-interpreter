@@ -1,4 +1,6 @@
-#[derive(Clone)]
+use serde::{Serialize, Deserialize};
+
+#[derive(PartialEq,Debug,Serialize,Deserialize,Clone)]
 pub enum AST {
     Integer(i32),
     Boolean(bool),

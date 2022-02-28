@@ -132,20 +132,20 @@ impl Runtime {
     fn eval_print(&mut self, format: String, arguments: Vec<Box<AST>>) {
         let mut vec_it = arguments.into_iter();
 
-        for c in format.chars() {
+        let str: String = format.chars().map(|c| {
             match c {
                 '~' => {
                     let val = *vec_it.next().expect("Expected more arguments for formatting string.");
-                    print!("{}", match self.eval(val) {
+                    match self.eval(val) {
                         Value::Int(val) => val.to_string(),
                         Value::Boolean(val) => val.to_string(),
                         Value::Unit => String::from("null"),
-                        });
+                        }
                     },
-                _ => print!("{}", c),
+                _ => c.to_string(),
             }
-        };
-
+        }).collect();
+        print!("{}", str);
     }
 
     pub fn eval(&mut self, ast: AST) -> Value {
