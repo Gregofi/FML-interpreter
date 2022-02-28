@@ -1,0 +1,8 @@
+#!/bin/bash
+if [ $1 = "run" ]
+then
+    $PARSER parse $2 -o $2.json --format=json
+    target/release/fml_interpreter run $2.json
+else
+    echo "Unknown command: $1. Supported commands: run"
+fi
