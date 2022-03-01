@@ -145,7 +145,8 @@ impl Runtime {
                 _ => c.to_string(),
             }
         }).collect();
-        print!("{}", str);
+        // TODO: Quick hack to make newlines work. 
+        print!("{}", str.replace("\\n", "\n"));
     }
 
     pub fn eval(&mut self, ast: AST) -> Value {
