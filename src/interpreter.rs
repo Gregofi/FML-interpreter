@@ -16,6 +16,7 @@ struct Function {
 
 struct Runtime {
     /** Represents currently active environment */
+    // TODO : Merge curr_env and call_stack_env into one.
     curr_env: LinkedList<HashMap<String, Value> >,
     /** Acts like a call stack. When function is called,
      *  inactive environments will be stored here.
@@ -26,9 +27,11 @@ struct Runtime {
 
 impl Runtime {
     pub fn new() -> Self {
+        let callstck:Vec<LinkedList<HashMap<String, Value>>> = [LinkedList::from([HashMap::new()])].to_vec();
+        
         return Runtime {
             curr_env: LinkedList::new(),
-            call_stack_envs: Vec::new(),
+            call_stack_envs: callstck,
             functions: HashMap::new(),
         }
     }
@@ -79,8 +82,16 @@ impl Runtime {
     /// otherwise returns None.
     /// Scouts the environments from the most recent one.
     fn fetch_var_mut(&mut self, name: &String) -> Option<&mut Value> {
+        // TODO : Clean this piece of code.
         for env in self.curr_env.iter_mut() {
             /* TODO: There might be some rust magic to write this more cleanly */
+            let var= env.get_mut(name);
+            if var.is_some() {
+                return var;
+            }
+        }
+        // Search global env.
+        for env in self.call_stack_envs.last_mut().expect("Call stack should always have global env.") {
             let var= env.get_mut(name);
             if var.is_some() {
                 return var;
@@ -100,6 +111,14 @@ impl Runtime {
         for env in self.curr_env.iter() {
             /* TODO: There might be some rust magic to write this more cleanly */
             let var= env.get(name);
+            if var.is_some() {
+                return var;
+            }
+        }
+        // Search global env.
+        for env in self.call_stack_envs.last().expect("Call stack should always have global env.") {
+            /* TODO: There might be some rust magic to write this more cleanly */
+            let var = env.get(name);
             if var.is_some() {
                 return var;
             }
@@ -149,6 +168,22 @@ impl Runtime {
         print!("{}", str.replace("\\n", "\n"));
     }
 
+    fn eval_top(&mut self, stmts: Vec<Box<AST>>) -> Value {
+        let mut return_val: Value = Value::Int(0);
+        for stmt in stmts {
+            match *stmt {
+                AST::Function { name, parameters, body } => {
+                    self.add_function(name, parameters, body)
+                }
+                _ => {
+                    return_val = self.eval(*stmt);
+                    ()
+                }
+            }
+        };
+        return_val
+    }
+
     pub fn eval(&mut self, ast: AST) -> Value {
         match ast {
             AST::Integer(val) => Value::Int(val),
@@ -188,7 +223,7 @@ impl Runtime {
             },
             AST::CallMethod { object, name, arguments } => todo!(),
             AST::Top(exprs) => {
-                panic!("Can't eval top level while not at top level.");
+                self.eval_top(exprs)
             },
 
             AST::Block(exprs) => {
@@ -238,17 +273,7 @@ pub fn interpret(ast: AST) {
     p.push_env();
     match ast {
         AST::Top(stmts) => {
-            for stmt in stmts {
-                match *stmt {
-                    AST::Function { name, parameters, body } => {
-                        p.add_function(name, parameters, body)
-                    }
-                    _ => {
-                        p.eval(*stmt);
-                        ()
-                    }
-                }
-            }
+            p.eval_top(stmts);
         }
         _ => panic!("Program must begin by top-level statement.")
     }
@@ -361,7 +386,17 @@ mod test {
         program.pop_env();
     }
 
+    #[test]
     fn function_call() {
-      
+        let mut program = Runtime::new();
+        program.push_env();
+        let decl = 
+        AST::Top([
+            AST::Variable{name: String::from("x"), value: AST::Integer(3).into_boxed()}.into_boxed(),
+            AST::Function{name: String::from("foo"), parameters: [String::from("y")].to_vec(),
+                body: AST::AccessVariable{name: String::from("x")}.into_boxed()}.into_boxed(),
+            AST::CallFunction{name: String::from("foo"), arguments: [AST::Integer(1).into_boxed()].to_vec()}.into_boxed(),
+        ].to_vec());
+        program.eval(decl);
     }
 }
