@@ -53,6 +53,12 @@ impl Heap {
         }
     }
 
+    pub fn alloc_bytes(&mut self, bytes: usize) -> *mut Pointer {
+        unsafe {
+            heap_alloc(bytes.try_into().unwrap()) as *mut Pointer
+        }
+    }
+
     pub fn deref(&self, ptr: Pointer) -> &Value {
         unsafe {
             &*ptr.data
@@ -76,6 +82,29 @@ impl Heap {
                 self.int_literals.insert(val, int_ptr);
                 int_ptr
             }
+        }
+    }
+
+    pub fn alloc_array(&mut self, size: i32, init: Pointer) -> Pointer {
+        let ptr_data = self.alloc_bytes(std::mem::size_of::<Pointer>() * size as usize);
+        unsafe {
+            // Initialize all fields of array with init
+            for i in 0..size {
+                *(ptr_data.offset(i.try_into().unwrap())) = init;
+            }
+        }
+        self.alloc(Value::Array{size: size, data: ptr_data})
+    }
+
+    pub fn assign_array(&mut self, array_data: *mut Pointer, index: i32, data: Pointer) {
+        unsafe {
+            *array_data.offset(index.try_into().unwrap()) = data
+        }
+    }
+
+    pub fn access_array(&mut self, array_data: *mut Pointer, index: i32) -> Pointer {
+        unsafe {
+            *array_data.offset(index.try_into().unwrap())
         }
     }
     

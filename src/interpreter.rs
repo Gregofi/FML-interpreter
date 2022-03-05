@@ -12,7 +12,7 @@ pub enum Value {
     Int(i32),
     Boolean(bool),
     Unit,
-    Array(Vec<Value>),
+    Array{size: i32, data: *mut Pointer},
     Object(),
 }
 
@@ -178,7 +178,7 @@ impl Runtime {
                         Value::Int(val) => val.to_string(),
                         Value::Boolean(val) => val.to_string(),
                         Value::Unit => String::from("null"),
-                        Value::Array(ptr) => todo!(),
+                        Value::Array{size: size, data: ptr} => todo!(),
                         Value::Object() => todo!(),
                         }
                     },
@@ -205,11 +205,14 @@ impl Runtime {
         return_val
     }
 
-    fn eval_arr(&mut self, size: Box<AST>, init: Box<AST>) -> Pointer {
-        todo!();
-        // let size = self.eval(*size);
-        // let init = self.eval(*init);
-        // Value::Unit
+    fn eval_array(&mut self, size: Box<AST>, init: Box<AST>) -> Pointer {
+        let size_ptr = self.eval(*size);
+        let size = match self.heap.deref(size_ptr) {
+            Value::Int(val) => *val, 
+            _ => panic!("Array size needs to be an integer.")
+        };
+        let init = self.eval(*init);
+        self.heap.alloc_array(size, init)
     }
 
     pub fn eval(&mut self, ast: AST) -> Pointer {
@@ -228,13 +231,30 @@ impl Runtime {
                 evaluated_val
             },
            
-            AST::Array { size, value } => self.eval_arr(size, value),
+            AST::Array { size, value } => self.eval_array(size, value),
             AST::Object { extends, members } => todo!(),
             AST::AccessVariable { name } => {
                 self.fetch_var(&name).expect("Variable has not been declared.")
             },
             AST::AccessField { object, field } => todo!(),
-            AST::AccessArray { array, index } => todo!(),
+            AST::AccessArray { array, index } => {
+                let array_ptr = self.eval(*array);
+                let index_ptr = self.eval(*index);
+                let (size, data) = match self.heap.deref(array_ptr) {
+                    Value::Array{size,data} => (*size, *data),
+                    _ => panic!("Can only indexate arrays.")
+                };
+                let index_val = self.heap.deref(index_ptr).clone();
+                match index_val {
+                    Value::Int(index) => {
+                        if index >= size {
+                            panic!("Index out of bounds!");
+                        }
+                        self.heap.access_array(data, index)
+                    },
+                    _ => panic!("Can't index array with non-int type.")
+                }
+            },
          
             AST::AssignVariable { name, value } => {
                 let evaluated = self.eval(*value);
@@ -243,7 +263,9 @@ impl Runtime {
             },
 
             AST::AssignField { object, field, value } => todo!(),
-            AST::AssignArray { array, index, value } => todo!(),
+            AST::AssignArray { array, index, value } => {
+                self.eval_assign_array(array, index, value)
+            }
             AST::Function { name, parameters, body } => {
                 panic!("Function can only be declared as top level statement.");
             }
@@ -295,6 +317,24 @@ impl Runtime {
                 self.heap.get_unit()
             }
         }
+    }
+
+    fn eval_assign_array(&mut self, array: Box<AST>, index: Box<AST>, value: Box<AST>) -> Pointer {
+        let ptr_array = self.eval(*array);
+        let ptr_index = self.eval(*index);
+        let ptr_value = self.eval(*value);
+
+        let int_index = match self.heap.deref(ptr_index) {
+            Value::Int(i) => *i,
+            _ => panic!("Arrays can only be indexed by integer."),
+        };
+
+        let (size, data) = match self.heap.deref(ptr_array) {
+            Value::Array{size, data} => (size, *data),
+            _ => panic!("Only arrays can be indexated."),
+        };
+        self.heap.assign_array(data, int_index, ptr_value);
+        self.heap.get_unit()
     }
 }
 
@@ -451,5 +491,23 @@ mod test {
             AST::CallFunction{name: String::from("foo"), arguments: [AST::Integer(1).into_boxed()].to_vec()}.into_boxed(),
         ].to_vec());
         program.eval(decl);
+    }
+
+    #[test]
+    fn arrays() {
+        let decl = AST::Top([
+            AST::Variable{name: String::from("arr"), value: AST::Array{size: AST::Integer(5).into_boxed(), value: AST::Integer(2).into_boxed()}.into_boxed()}.into_boxed(),
+            AST::AssignArray{array: AST::AccessVariable{name: String::from("arr")}.into_boxed(), index: AST::Integer(1).into_boxed(), value: AST::Integer(3).into_boxed()}.into_boxed(),
+        ].to_vec());
+        let mut program = Runtime::new();
+        program.push_env();
+        program.eval(decl);
+        let res0 = program.eval(AST::AccessArray{array: AST::AccessVariable{name: String::from("arr")}.into_boxed(), index: AST::Integer(0).into_boxed()});
+        let res1 = program.eval(AST::AccessArray{array: AST::AccessVariable{name: String::from("arr")}.into_boxed(), index: AST::Integer(1).into_boxed()});
+        let res2 = program.eval(AST::AccessArray{array: AST::AccessVariable{name: String::from("arr")}.into_boxed(), index: AST::Integer(2).into_boxed()});
+
+        assert!(std::matches!(program.heap.deref(res0), Value::Int(2)));
+        assert!(std::matches!(program.heap.deref(res1), Value::Int(3)));
+        assert!(std::matches!(program.heap.deref(res2), Value::Int(2)));
     }
 }
