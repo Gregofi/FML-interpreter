@@ -170,5 +170,5 @@ bool heap_free(void *blk) {
     return true;
 }
 
-void heap_done(int *pendingBlk) { *pendingBlk = taken_blocks; }
+int heap_done() { return taken_blocks; }
 

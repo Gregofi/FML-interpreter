@@ -1,6 +1,8 @@
 
 mod interpreter;
 mod ast;
+mod heap;
+
 use ast::AST;
 use interpreter::interpret;
 use std::fs;

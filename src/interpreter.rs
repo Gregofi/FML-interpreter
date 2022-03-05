@@ -1,11 +1,19 @@
-use crate::ast::AST;
+use crate::{ast::AST, heap::Pointer};
+use crate::heap::Heap;
 use std::{collections::HashMap, collections::LinkedList, mem};
 
-#[derive(Copy, Clone)]
-enum Value {
+#[derive(Debug)]
+pub enum Error {
+    VariableMissing,
+}
+
+#[derive(Clone)]
+pub enum Value {
     Int(i32),
     Boolean(bool),
     Unit,
+    Array(Vec<Value>),
+    Object(),
 }
 
 #[derive(Clone)]
@@ -17,22 +25,24 @@ struct Function {
 struct Runtime {
     /** Represents currently active environment */
     // TODO : Merge curr_env and call_stack_env into one.
-    curr_env: LinkedList<HashMap<String, Value> >,
+    curr_env: LinkedList<HashMap<String, Pointer> >,
     /** Acts like a call stack. When function is called,
      *  inactive environments will be stored here.
      */
-    call_stack_envs: Vec<LinkedList<HashMap<String, Value>>>,
+    call_stack_envs: Vec<LinkedList<HashMap<String, Pointer>>>,
     functions: HashMap<String, Function>,
+    heap: Heap,
 }
 
 impl Runtime {
     pub fn new() -> Self {
-        let callstck:Vec<LinkedList<HashMap<String, Value>>> = [LinkedList::from([HashMap::new()])].to_vec();
+        let callstack:Vec<LinkedList<HashMap<String, Pointer>>> = [LinkedList::from([HashMap::new()])].to_vec();
         
         return Runtime {
             curr_env: LinkedList::new(),
-            call_stack_envs: callstck,
+            call_stack_envs: callstack,
             functions: HashMap::new(),
+            heap: Heap::new(),
         }
     }
 
@@ -53,7 +63,17 @@ impl Runtime {
         self.functions.insert(name, Function{parameters, body});
     }
 
-    fn eval_function_call(&mut self, name: &String, arguments: Vec<Box<AST>>) -> Value {
+    /// Pushes new environment on top.
+    fn push_env(&mut self) {
+        self.curr_env.push_front(HashMap::new());
+    }
+
+    /// Pops the top-most environment.
+    fn pop_env(&mut self) {
+        self.curr_env.pop_front();
+    }
+
+    fn eval_function_call(&mut self, name: &String, arguments: Vec<Box<AST>>) -> Pointer {
         self.save_env();
         let function: Function = self.functions.get(name).expect("Called function is not defined.").clone();
         if function.parameters.len() != arguments.len() {
@@ -68,72 +88,68 @@ impl Runtime {
         result
     }
 
-    /// Pushes new environment on top.
-    fn push_env(&mut self) {
-        self.curr_env.push_front(HashMap::new());
-    }
-
-    /// Pops the top-most environment.
-    fn pop_env(&mut self) {
-        self.curr_env.pop_front();
-    }
-
     /// Returns mutable reference to var with 'name' from environments if it exists, 
     /// otherwise returns None.
     /// Scouts the environments from the most recent one.
-    fn fetch_var_mut(&mut self, name: &String) -> Option<&mut Value> {
+    fn fetch_var_mut(&mut self, name: &String) -> Result<&mut Pointer, Error> {
         // TODO : Clean this piece of code.
         for env in self.curr_env.iter_mut() {
             /* TODO: There might be some rust magic to write this more cleanly */
             let var= env.get_mut(name);
             if var.is_some() {
-                return var;
+                let ptr = var.unwrap();
+                return Ok(ptr);
             }
         }
         // Search global env.
         for env in self.call_stack_envs.last_mut().expect("Call stack should always have global env.") {
-            let var= env.get_mut(name);
-            if var.is_some() {
-                return var;
+            let ptr= env.get_mut(name);
+            if ptr.is_some() {
+                return Ok(ptr.unwrap());
             }
         }
-        None
+        Err(Error::VariableMissing)
     }
 
-    fn assign_to_var(&mut self, name: &String, val: Value) {
-        *self.fetch_var_mut(name).expect("Assignment to non-existing variable") = val;
+    fn assign_to_var(&mut self, name: &String, val: Pointer) {
+        let mut_var = self.fetch_var_mut(name).unwrap(); 
+        *mut_var = val
     }
 
     /// Returns reference to var with 'name' from environments if it exists, 
     /// otherwise returns None.
     /// Scouts the environments from the most recent one.
-    fn fetch_var(&self, name: &String) -> Option<&Value> {
-        for env in self.curr_env.iter() {
+    fn fetch_var(&mut self, name: &String) -> Result<Pointer, Error> {
+        // TODO : Clean this piece of code.
+        for env in self.curr_env.iter_mut() {
             /* TODO: There might be some rust magic to write this more cleanly */
-            let var= env.get(name);
+            let var= env.get_mut(name);
             if var.is_some() {
-                return var;
+                let ptr = var.unwrap();
+                return Ok(*ptr);
             }
         }
         // Search global env.
-        for env in self.call_stack_envs.last().expect("Call stack should always have global env.") {
-            /* TODO: There might be some rust magic to write this more cleanly */
-            let var = env.get(name);
-            if var.is_some() {
-                return var;
+        for env in self.call_stack_envs.last_mut().expect("Call stack should always have global env.") {
+            let ptr= env.get_mut(name);
+            if ptr.is_some() {
+                return Ok(*ptr.unwrap());
             }
         }
-        None
+        Err(Error::VariableMissing)
     }
 
+
     /// Adds variable to the top-most environment.
-    fn add_var(&mut self, name: String, val: Value) {
+    fn add_var(&mut self, name: String, val: Pointer) -> Pointer {
         let top = self.curr_env.front_mut().expect("Missing top frame of environment.");
         /* TODO: This probably can be done with expect.
         I was however unable to do it at the time of writing this. */
         match top.insert(name, val) {
-            None => (),
-            /* TODO: Make the error message print the variable name. */
+            None => val,
+            /* TODO: Make the error message print the variable name.
+                     If this was ever an recoverable error we need
+                     to free the memory here. */
             Some(_) => panic!("Variable was redeclared."),
         }
     }
@@ -141,8 +157,10 @@ impl Runtime {
     /// Evaluates AST node as boolean, if the AST node is not boolean then return Err. 
     /// 
     fn eval_bool(&mut self, expr: AST) -> Result<bool, &'static str> {
-        match self.eval(expr) {
-            Value::Boolean(val) => Ok(val),
+        let bool_ptr = self.eval(expr);
+        let bool_val = self.heap.deref(bool_ptr);
+        match bool_val {
+            Value::Boolean(t) => Ok(*t),
             _ => Err("Expression in 'if' condition has to have type bool"),
         }
     }
@@ -155,10 +173,13 @@ impl Runtime {
             match c {
                 '~' => {
                     let val = *vec_it.next().expect("Expected more arguments for formatting string.");
-                    match self.eval(val) {
+                    let evaled_ptr = self.eval(val);
+                    match self.heap.deref(evaled_ptr) {
                         Value::Int(val) => val.to_string(),
                         Value::Boolean(val) => val.to_string(),
                         Value::Unit => String::from("null"),
+                        Value::Array(ptr) => todo!(),
+                        Value::Object() => todo!(),
                         }
                     },
                 _ => c.to_string(),
@@ -168,8 +189,8 @@ impl Runtime {
         print!("{}", str.replace("\\n", "\n"));
     }
 
-    fn eval_top(&mut self, stmts: Vec<Box<AST>>) -> Value {
-        let mut return_val: Value = Value::Int(0);
+    fn eval_top(&mut self, stmts: Vec<Box<AST>>) -> Pointer {
+        let mut return_val = self.heap.get_int(0);
         for stmt in stmts {
             match *stmt {
                 AST::Function { name, parameters, body } => {
@@ -184,13 +205,22 @@ impl Runtime {
         return_val
     }
 
-    pub fn eval(&mut self, ast: AST) -> Value {
+    fn eval_arr(&mut self, size: Box<AST>, init: Box<AST>) -> Pointer {
+        todo!();
+        // let size = self.eval(*size);
+        // let init = self.eval(*init);
+        // Value::Unit
+    }
+
+    pub fn eval(&mut self, ast: AST) -> Pointer {
         match ast {
-            AST::Integer(val) => Value::Int(val),
+            AST::Integer(val) => {
+                self.heap.get_int(val)
+            }
           
-            AST::Boolean(val) => Value::Boolean(val),
+            AST::Boolean(val) => self.heap.get_bool(val),
             
-            AST::Null => Value::Unit,
+            AST::Null => self.heap.get_unit(),
          
             AST::Variable { name, value } => {
                 let evaluated_val = self.eval(*value);
@@ -198,10 +228,10 @@ impl Runtime {
                 evaluated_val
             },
            
-            AST::Array { size, value } => todo!(),
+            AST::Array { size, value } => self.eval_arr(size, value),
             AST::Object { extends, members } => todo!(),
             AST::AccessVariable { name } => {
-                *self.fetch_var(&name).expect("Variable has not been declared.")
+                self.fetch_var(&name).expect("Variable has not been declared.")
             },
             AST::AccessField { object, field } => todo!(),
             AST::AccessArray { array, index } => todo!(),
@@ -227,7 +257,7 @@ impl Runtime {
             },
 
             AST::Block(exprs) => {
-                let mut last_val: Option<Value> = None;
+                let mut last_val: Option<Pointer> = None;
                 self.push_env();
                 for expr in exprs {
                     last_val = Some(self.eval(*expr));
@@ -235,7 +265,7 @@ impl Runtime {
                 self.pop_env();
                 match last_val {
                     Some(val) => val,
-                    None => Value::Unit,
+                    None => self.heap.get_unit(),
                 }
             },
 
@@ -248,7 +278,7 @@ impl Runtime {
                     self.eval(*body.clone());
                 }
                 self.pop_env();
-                Value::Unit
+                self.heap.get_unit()
             },
 
             AST::Conditional { condition, consequent, alternative } => {
@@ -262,11 +292,12 @@ impl Runtime {
 
             AST::Print { format, arguments } => {
                 self.eval_print(format, arguments); 
-                Value::Unit
+                self.heap.get_unit()
             }
         }
     }
 }
+
 
 pub fn interpret(ast: AST) {
     let mut p = Runtime::new();
@@ -291,42 +322,55 @@ mod test {
         let mut program = Runtime::new();
 
         program.push_env();
-        program.add_var(String::from("x"), Value::Int(1));
-        program.add_var(String::from("y"), Value::Int(2));
-        program.add_var(String::from("z"), Value::Int(3));
+        let int_1 = program.heap.get_int(1);
+        let int_2 = program.heap.get_int(2);
+        let int_3 = program.heap.get_int(3);
+        let int_10 = program.heap.get_int(10);
+        let int_20 = program.heap.get_int(20);
+        program.add_var(String::from("x"), int_1);
+        program.add_var(String::from("y"), int_2);
+        program.add_var(String::from("z"), int_3);
         
-        assert!(std::matches!(program.fetch_var(&String::from("x")), Some(Value::Int(1))));
-        assert!(std::matches!(program.fetch_var(&String::from("y")), Some(Value::Int(2))));
-        assert!(std::matches!(program.fetch_var(&String::from("z")), Some(Value::Int(3))));
-        assert!(std::matches!(program.fetch_var(&String::from("a")), None));
+        let var_x = program.fetch_var(&String::from("x")).unwrap();
+        let var_y = program.fetch_var(&String::from("y")).unwrap();
+        let var_z = program.fetch_var(&String::from("z")).unwrap();
+        assert!(std::matches!(program.heap.deref(var_x), Value::Int(1)));
+        assert!(std::matches!(program.heap.deref(var_y), Value::Int(2)));
+        assert!(std::matches!(program.heap.deref(var_z), Value::Int(3)));
+        assert!(std::matches!(program.fetch_var(&String::from("a")), Err(Error::VariableMissing)));
 
         program.push_env();
-        program.add_var(String::from("x"), Value::Int(10));
-        program.add_var(String::from("y"), Value::Int(20));
+        program.add_var(String::from("x"), int_10);
+        program.add_var(String::from("y"), int_20);
         
-        assert!(std::matches!(program.fetch_var(&String::from("x")), Some(Value::Int(10))));
-        assert!(std::matches!(program.fetch_var(&String::from("y")), Some(Value::Int(20))));
-        assert!(std::matches!(program.fetch_var(&String::from("z")), Some(Value::Int(3))));
-        assert!(std::matches!(program.fetch_var(&String::from("a")), None));
-
+        let var_x = program.fetch_var(&String::from("x")).unwrap();
+        let var_y = program.fetch_var(&String::from("y")).unwrap();
+        assert!(std::matches!(program.heap.deref(var_x), Value::Int(10)));
+        assert!(std::matches!(program.heap.deref(var_y), Value::Int(20)));
+        assert!(std::matches!(program.heap.deref(var_z), Value::Int(3)));
+        assert!(std::matches!(program.fetch_var(&String::from("a")), Err(Error::VariableMissing)));
+        
         program.pop_env();
-        assert!(std::matches!(program.fetch_var(&String::from("x")), Some(Value::Int(1))));
-        assert!(std::matches!(program.fetch_var(&String::from("y")), Some(Value::Int(2))));
-        assert!(std::matches!(program.fetch_var(&String::from("z")), Some(Value::Int(3))));
-        assert!(std::matches!(program.fetch_var(&String::from("a")), None));
+        let var_x = program.fetch_var(&String::from("x")).unwrap();
+        let var_y = program.fetch_var(&String::from("y")).unwrap();
+        let var_z = program.fetch_var(&String::from("z")).unwrap();
+        assert!(std::matches!(program.heap.deref(var_x), Value::Int(1)));
+        assert!(std::matches!(program.heap.deref(var_y), Value::Int(2)));
+        assert!(std::matches!(program.heap.deref(var_z), Value::Int(3)));
+        assert!(std::matches!(program.fetch_var(&String::from("a")), Err(Error::VariableMissing)));
     }
 
     #[test]
     fn literals() {
         let mut program = Runtime::new();
 
-        let val1 = AST::Integer(5);
-        let val2 = AST::Boolean(true);
-        let val3 = AST::Null;
+        let val1 = program.eval(AST::Integer(5));
+        let val2 = program.eval(AST::Boolean(true));
+        let val3 = program.eval(AST::Null);
 
-        assert!(std::matches!(program.eval(val1), Value::Int(5)));
-        assert!(std::matches!(program.eval(val2), Value::Boolean(true)));
-        assert!(std::matches!(program.eval(val3), Value::Unit));
+        assert!(std::matches!(program.heap.deref(val1), Value::Int(5)));
+        assert!(std::matches!(program.heap.deref(val2), Value::Boolean(true)));
+        assert!(std::matches!(program.heap.deref(val3), Value::Unit));
     }
 
     #[test]
@@ -345,8 +389,11 @@ mod test {
             alternative: AST::Integer(2).into_boxed()
         };
 
-        assert!(std::matches!(program.eval(val_true), Value::Int(1)));
-        assert!(std::matches!(program.eval(val_false), Value::Int(2)));
+        let evaled_true = program.eval(val_true);
+        let evaled_false = program.eval(val_false);
+
+        assert!(std::matches!(program.heap.deref(evaled_true), Value::Int(1)));
+        assert!(std::matches!(program.heap.deref(evaled_false), Value::Int(2)));
     }
 
     #[test]
@@ -355,7 +402,8 @@ mod test {
 
         let compound = AST::Block([AST::Integer(1).into_boxed(), AST::Integer(2).into_boxed()].to_vec());
 
-        assert!(std::matches!(program.eval(compound), Value::Int(2)));
+        let evaled = program.eval(compound);
+        assert!(std::matches!(program.heap.deref(evaled), Value::Int(2)));
     }
 
     #[test]
@@ -364,11 +412,14 @@ mod test {
         program.push_env();
         let decl = AST::Variable{name: String::from("a"), value: AST::Integer(5).into_boxed()};
         program.eval(decl);
-        assert!(std::matches!(program.fetch_var(&String::from("a")), Some(Value::Int(5))));
-
+        let a = program.fetch_var(&String::from("a")).unwrap();
+        assert!(std::matches!(program.heap.deref(a), Value::Int(5)));
+        
         let assign = AST::AssignVariable{name: String::from("a"), value: AST::Integer(10).into_boxed()};
         program.eval(assign);
-        assert!(std::matches!(program.fetch_var(&String::from("a")), Some(Value::Int(10))));
+        
+        let a = program.fetch_var(&String::from("a")).unwrap();
+        assert!(std::matches!(program.heap.deref(a), Value::Int(10)));
 
         // Test that the variable 'a' will remain the same after coming from a block
         let block = AST::Block([
@@ -378,10 +429,12 @@ mod test {
         ].to_vec());
 
         // Check that the block will return the new value of variable
-        assert!(std::matches!(program.eval(block), Value::Int(2)));
+        let evaled_block = program.eval(block);
+        assert!(std::matches!(program.heap.deref(evaled_block), Value::Int(2)));
 
         // Check that the variable outside the scope retained it's value
-        assert!(std::matches!(program.fetch_var(&String::from("a")), Some(Value::Int(10))));
+        let a = program.fetch_var(&String::from("a")).unwrap();
+        assert!(std::matches!(program.heap.deref(a), Value::Int(10)));
 
         program.pop_env();
     }
