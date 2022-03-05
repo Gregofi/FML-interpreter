@@ -1,0 +1,1 @@
+{"Top":[{"Variable":{"name":"a","value":{"Integer":1}}},{"AssignVariable":{"name":"a","value":{"CallMethod":{"object":{"Integer":2},"name":"+","arguments":[{"Integer":3}]}}}}]}

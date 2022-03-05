@@ -139,7 +139,6 @@ impl Runtime {
         Err(Error::VariableMissing)
     }
 
-
     /// Adds variable to the top-most environment.
     fn add_var(&mut self, name: String, val: Pointer) -> Pointer {
         let top = self.curr_env.front_mut().expect("Missing top frame of environment.");
@@ -156,12 +155,13 @@ impl Runtime {
 
     /// Evaluates AST node as boolean, if the AST node is not boolean then return Err. 
     /// 
-    fn eval_bool(&mut self, expr: AST) -> Result<bool, &'static str> {
+    fn eval_bool(&mut self, expr: AST) -> bool {
         let bool_ptr = self.eval(expr);
         let bool_val = self.heap.deref(bool_ptr);
         match bool_val {
-            Value::Boolean(t) => Ok(*t),
-            _ => Err("Expression in 'if' condition has to have type bool"),
+            Value::Boolean(t) => *t,
+            Value::Unit => false,
+            _ => true,
         }
     }
 
@@ -272,7 +272,7 @@ impl Runtime {
             AST::Loop { condition, body } => {
                 self.push_env();
                 loop {
-                    if self.eval_bool(*condition.clone()).unwrap() {
+                    if !self.eval_bool((*condition).clone()) {
                         break;
                     }
                     self.eval(*body.clone());
@@ -282,7 +282,7 @@ impl Runtime {
             },
 
             AST::Conditional { condition, consequent, alternative } => {
-                let cond = self.eval_bool(*condition).unwrap();
+                let cond = self.eval_bool(*condition);
                 if cond {
                     self.eval(*consequent)
                 } else {
