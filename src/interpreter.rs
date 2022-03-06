@@ -233,6 +233,44 @@ impl Runtime {
         self.heap.alloc_array(size, values)
     }
 
+    fn eval_operator(&mut self, left: Value, right: Value, name: String) -> Pointer {
+        match left {
+            Value::Int(v_left) => {
+                match right {
+                    Value::Int(v_right) => {
+                        match name.as_str() {
+                            "+" => self.heap.get_int(v_left + v_right),
+                            "-" => self.heap.get_int(v_left - v_right),
+                            "*" => self.heap.get_int(v_left * v_right),
+                            "/" => self.heap.get_int(v_left / v_right),
+                            "%" => self.heap.get_int(v_left % v_right),
+                            "|" => self.heap.get_bool((v_left != 0) || (v_right != 0)),
+                            "&" => self.heap.get_bool((v_left != 0) && (v_right != 0)),
+                            "==" => self.heap.get_bool(v_left == v_right),
+                            "!=" => self.heap.get_bool(v_left != v_right),
+                            "<" => self.heap.get_bool(v_left < v_right),
+                            ">" => self.heap.get_bool(v_left > v_right),
+                            "<=" => self.heap.get_bool(v_left <= v_right),
+                            ">=" => self.heap.get_bool(v_left >= v_right),
+                            _ => panic!("Unknown operator.")
+                        }
+                    },
+                    _ => panic!("Operators can only be used on ints.")
+                }
+            }
+            Value::Object() => {
+                todo!();
+            }
+            Value::Unit => {
+                match right {
+                    Value::Unit => self.heap.get_bool(true),
+                    _ => self.heap.get_bool(false),
+                }
+            }
+            _ => panic!("Can only call methods on objects.")
+        }
+    }
+
     pub fn eval(&mut self, ast: AST) -> Pointer {
         match ast {
             AST::Integer(val) => {
@@ -295,43 +333,12 @@ impl Runtime {
                 let object_ptr = self.eval(*object);
                 let object = self.heap.deref(object_ptr).clone();
                 match object {
-                    Value::Int(v_left) => {
+                    Value::Object() => todo!(),
+                    _ => {
                         let right_ptr = self.eval(*arguments[0].clone());
-                        let right = *self.heap.deref(right_ptr);
-                        match right {
-                            Value::Int(v_right) => {
-                                match name.as_str() {
-                                    "+" => self.heap.get_int(v_left + v_right),
-                                    "-" => self.heap.get_int(v_left - v_right),
-                                    "*" => self.heap.get_int(v_left * v_right),
-                                    "/" => self.heap.get_int(v_left / v_right),
-                                    "%" => self.heap.get_int(v_left % v_right),
-                                    "|" => self.heap.get_bool((v_left != 0) || (v_right != 0)),
-                                    "&" => self.heap.get_bool((v_left != 0) && (v_right != 0)),
-                                    "==" => self.heap.get_bool(v_left == v_right),
-                                    "!=" => self.heap.get_bool(v_left != v_right),
-                                    "<" => self.heap.get_bool(v_left < v_right),
-                                    ">" => self.heap.get_bool(v_left > v_right),
-                                    "<=" => self.heap.get_bool(v_left <= v_right),
-                                    ">=" => self.heap.get_bool(v_left >= v_right),
-                                    _ => panic!("Unknown operator.")
-                                }
-                            },
-                            _ => panic!("Operators can only be used on ints.")
-                        }
+                        let right_operand = *self.heap.deref(right_ptr);
+                        self.eval_operator(object, right_operand, name)
                     }
-                    Value::Object() => {
-                        todo!();
-                    }
-                    Value::Unit => {
-                        let right_ptr = self.eval(*arguments[0].clone());
-                        let right = *self.heap.deref(right_ptr);
-                        match right {
-                            Value::Unit => self.heap.get_bool(true),
-                            _ => self.heap.get_bool(false),
-                        }
-                    }
-                    _ => panic!("Can only call methods on objects.")
                 }
             }
             AST::Top(exprs) => {
