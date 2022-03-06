@@ -25,6 +25,14 @@ pub struct Heap {
     unit: Pointer,
 }
 
+impl Drop for Heap {
+    fn drop(&mut self) {
+        unsafe {
+            heap_done();
+        }
+    }
+}
+
 impl Heap {
     pub fn new() -> Self {
         unsafe {
@@ -39,15 +47,12 @@ impl Heap {
         }
     }
 
-    pub fn drop(&mut self) {
-        unsafe {
-            heap_done();
-        }
-    }
-
     pub fn alloc(&mut self, value: Value) -> Pointer {
         unsafe {
             let ptr = heap_alloc(std::mem::size_of_val(&value).try_into().unwrap()) as *mut Value;
+            if ptr.is_null() {
+                panic!("A null pointer was returned by alloc.")
+            }
             *ptr = value;
             Pointer{data: ptr}
         }
@@ -55,7 +60,11 @@ impl Heap {
 
     pub fn alloc_bytes(&mut self, bytes: usize) -> *mut Pointer {
         unsafe {
-            heap_alloc(bytes.try_into().unwrap()) as *mut Pointer
+            let ptr =heap_alloc(bytes.try_into().expect("Couldn't convert 'bytes' to 32bit integer.")) as *mut Pointer;
+            if ptr.is_null() {
+                panic!("A null pointer was returned by alloc.")
+            }
+            ptr
         }
     }
 
@@ -85,12 +94,12 @@ impl Heap {
         }
     }
 
-    pub fn alloc_array(&mut self, size: i32, init: Pointer) -> Pointer {
+    pub fn alloc_array(&mut self, size: i32, init_vec: Vec<Pointer>) -> Pointer {
         let ptr_data = self.alloc_bytes(std::mem::size_of::<Pointer>() * size as usize);
         unsafe {
             // Initialize all fields of array with init
-            for i in 0..size {
-                *(ptr_data.offset(i.try_into().unwrap())) = init;
+            for (pos, item) in init_vec.iter().enumerate() {
+                *(ptr_data.offset(pos.try_into().unwrap())) = *item;
             }
         }
         self.alloc(Value::Array{size: size, data: ptr_data})

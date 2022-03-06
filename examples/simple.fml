@@ -1,5 +1,9 @@
-
-
-let a = 1;
-a <- 2 + 3;
+let i = 0;
+  let n = 4 - 0 + 1;
+  let arr = array(n,
+  begin
+     let e = i + 0;
+     i <- i + 1;
+     e
+  end)
 

@@ -11,7 +11,7 @@
 #define LEVELS 32
 #define MAGIC_VAL 22131232
 
-#define MEMORY_SIZE 100 * 1024 * 1024
+#define MEMORY_SIZE (128 + 10) * 1024 * 1024
 
 static struct fragment *mem_arr[LEVELS];
 static int heap_size;
@@ -85,7 +85,9 @@ static void split(struct fragment *f, int i) {
     f->size = new_size - frag_size;
     struct fragment *buddy = (struct fragment *)((uint8_t *)f + new_size);
     *buddy = (struct fragment){NULL, new_size - frag_size, MAGIC_VAL};
-    assert((uint8_t *)buddy - (uint8_t *)f == f->size + frag_size);
+    if(!((uint8_t *)buddy - (uint8_t *)f == f->size + frag_size)) {
+        assert(false);
+    }
     set_taken(buddy, false);
     add_free(buddy, i - 1);
 }
@@ -99,7 +101,7 @@ void heap_init() {
     mem = (struct fragment *)memPool;
     /* Try to allocate as much memory as possible */
     while (true) {
-        int i = pow2(MEMORY_SIZE - heap_size);
+        int i = log2(MEMORY_SIZE - heap_size);
         int new_size = 1 << i;
         if (new_size < MIN_BLOCK_SIZE || heap_size + new_size > MEMORY_SIZE)
             break;
@@ -157,7 +159,7 @@ bool heap_free(void *blk) {
         return false;
     set_taken(f, false);
 
-    int i = pow2(f->size + frag_size);
+    int i = log2(f->size + frag_size);
 
     add_free(f, i);
     /* Try to merge fragments until fragment size does not exceed max heap size
@@ -170,5 +172,5 @@ bool heap_free(void *blk) {
     return true;
 }
 
-int heap_done() { return taken_blocks; }
+int heap_done() { free(mem); return taken_blocks; }
 

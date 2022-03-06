@@ -7,7 +7,7 @@ pub enum Error {
     VariableMissing,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Value {
     Int(i32),
     Boolean(bool),
@@ -164,6 +164,27 @@ impl Runtime {
             _ => true,
         }
     }
+    fn value_to_str(&mut self, ptr: Pointer) -> String {
+        let derefered_val = *self.heap.deref(ptr);
+        match derefered_val {
+            Value::Int(val) => val.to_string(),
+            Value::Boolean(val) => val.to_string(),
+            Value::Unit => String::from("null"),
+            Value::Array{size, data} => {
+                let mut res = String::from("[");
+                for i in 0..size {                                
+                    let arr_val = self.heap.access_array(data, i);
+                    res.push_str(&self.value_to_str(arr_val));
+                    if i != size - 1 {
+                        res += ", ";
+                    }
+                };
+                res += "]";
+                res
+            },
+            Value::Object() => todo!(),
+        }
+    }
 
     /// Evaluates print expression.
     fn eval_print(&mut self, format: String, arguments: Vec<Box<AST>>) {
@@ -174,14 +195,8 @@ impl Runtime {
                 '~' => {
                     let val = *vec_it.next().expect("Expected more arguments for formatting string.");
                     let evaled_ptr = self.eval(val);
-                    match self.heap.deref(evaled_ptr) {
-                        Value::Int(val) => val.to_string(),
-                        Value::Boolean(val) => val.to_string(),
-                        Value::Unit => String::from("null"),
-                        Value::Array{size: size, data: ptr} => todo!(),
-                        Value::Object() => todo!(),
-                        }
-                    },
+                    self.value_to_str(evaled_ptr)
+                }       
                 _ => c.to_string(),
             }
         }).collect();
@@ -211,8 +226,11 @@ impl Runtime {
             Value::Int(val) => *val, 
             _ => panic!("Array size needs to be an integer.")
         };
-        let init = self.eval(*init);
-        self.heap.alloc_array(size, init)
+        let mut values = Vec::<Pointer>::new();
+        for _ in 0..size {
+            values.push(self.eval(*init.clone()));
+        }
+        self.heap.alloc_array(size, values)
     }
 
     pub fn eval(&mut self, ast: AST) -> Pointer {
@@ -273,7 +291,49 @@ impl Runtime {
             AST::CallFunction { name, arguments } => {
                 self.eval_function_call(&name, arguments)
             },
-            AST::CallMethod { object, name, arguments } => todo!(),
+            AST::CallMethod { object, name, arguments } => {
+                let object_ptr = self.eval(*object);
+                let object = self.heap.deref(object_ptr).clone();
+                match object {
+                    Value::Int(v_left) => {
+                        let right_ptr = self.eval(*arguments[0].clone());
+                        let right = *self.heap.deref(right_ptr);
+                        match right {
+                            Value::Int(v_right) => {
+                                match name.as_str() {
+                                    "+" => self.heap.get_int(v_left + v_right),
+                                    "-" => self.heap.get_int(v_left - v_right),
+                                    "*" => self.heap.get_int(v_left * v_right),
+                                    "/" => self.heap.get_int(v_left / v_right),
+                                    "%" => self.heap.get_int(v_left % v_right),
+                                    "|" => self.heap.get_bool((v_left != 0) || (v_right != 0)),
+                                    "&" => self.heap.get_bool((v_left != 0) && (v_right != 0)),
+                                    "==" => self.heap.get_bool((v_left != 0) == (v_right != 0)),
+                                    "!=" => self.heap.get_bool((v_left != 0) != (v_right != 0)),
+                                    "<" => self.heap.get_bool(v_left < v_right),
+                                    ">" => self.heap.get_bool(v_left > v_right),
+                                    "<=" => self.heap.get_bool(v_left <= v_right),
+                                    ">=" => self.heap.get_bool(v_left >= v_right),
+                                    _ => panic!("Unknown operator.")
+                                }
+                            },
+                            _ => panic!("Operators can only be used on ints.")
+                        }
+                    }
+                    Value::Object() => {
+                        todo!();
+                    }
+                    Value::Unit => {
+                        let right_ptr = self.eval(*arguments[0].clone());
+                        let right = *self.heap.deref(right_ptr);
+                        match right {
+                            Value::Unit => self.heap.get_bool(true),
+                            _ => self.heap.get_bool(false),
+                        }
+                    }
+                    _ => panic!("Can only call methods on objects.")
+                }
+            }
             AST::Top(exprs) => {
                 self.eval_top(exprs)
             },
@@ -352,12 +412,14 @@ pub fn interpret(ast: AST) {
 
 
 
-
+/// The tests cannot be run in parallel, since the C code will die if so.
 #[cfg(test)]
 mod test {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn environment() {
         let mut program = Runtime::new();
 
@@ -378,7 +440,7 @@ mod test {
         assert!(std::matches!(program.heap.deref(var_y), Value::Int(2)));
         assert!(std::matches!(program.heap.deref(var_z), Value::Int(3)));
         assert!(std::matches!(program.fetch_var(&String::from("a")), Err(Error::VariableMissing)));
-
+        
         program.push_env();
         program.add_var(String::from("x"), int_10);
         program.add_var(String::from("y"), int_20);
@@ -399,21 +461,23 @@ mod test {
         assert!(std::matches!(program.heap.deref(var_z), Value::Int(3)));
         assert!(std::matches!(program.fetch_var(&String::from("a")), Err(Error::VariableMissing)));
     }
-
+    
     #[test]
+    #[serial]
     fn literals() {
         let mut program = Runtime::new();
-
+        
         let val1 = program.eval(AST::Integer(5));
         let val2 = program.eval(AST::Boolean(true));
         let val3 = program.eval(AST::Null);
-
+        
         assert!(std::matches!(program.heap.deref(val1), Value::Int(5)));
         assert!(std::matches!(program.heap.deref(val2), Value::Boolean(true)));
         assert!(std::matches!(program.heap.deref(val3), Value::Unit));
     }
-
+    
     #[test]
+    #[serial]
     fn conditional() {
         let mut program = Runtime::new();
 
@@ -437,6 +501,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn compound() {
         let mut program = Runtime::new();
 
@@ -447,6 +512,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn var_assign() {
         let mut program = Runtime::new();
         program.push_env();
@@ -480,6 +546,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn function_call() {
         let mut program = Runtime::new();
         program.push_env();
@@ -494,6 +561,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn arrays() {
         let decl = AST::Top([
             AST::Variable{name: String::from("arr"), value: AST::Array{size: AST::Integer(5).into_boxed(), value: AST::Integer(2).into_boxed()}.into_boxed()}.into_boxed(),
@@ -509,5 +577,33 @@ mod test {
         assert!(std::matches!(program.heap.deref(res0), Value::Int(2)));
         assert!(std::matches!(program.heap.deref(res1), Value::Int(3)));
         assert!(std::matches!(program.heap.deref(res2), Value::Int(2)));
+    }
+
+    #[test]
+    #[serial]
+    fn list_comprehension() {
+        let decl = AST::Top([
+            AST::Variable { name: String::from("i"), value: AST::Integer(0).into_boxed() }.into_boxed(), 
+            AST::Variable { name: String::from("n"), value: AST::CallMethod 
+                { object: AST::CallMethod 
+                    { object: AST::Integer(4).into_boxed(), name: String::from("-"), arguments: [AST::Integer(0).into_boxed()].to_vec() }.into_boxed(), 
+                    name: String::from("+"), arguments: [AST::Integer(1).into_boxed()].to_vec() }.into_boxed() }.into_boxed(), 
+            AST::Variable { name: String::from("arr"), 
+                value: AST::Array { size: AST::AccessVariable { name: String::from("n") }.into_boxed(), 
+                value: AST::Block([
+                    AST::Variable { name: String::from("e"), value: AST::CallMethod { object: AST::AccessVariable { name: String::from("i") }.into_boxed(), name: String::from("+"), arguments: 
+                        [AST::Integer(0).into_boxed()].to_vec() }.into_boxed() }.into_boxed(), 
+                    AST::AssignVariable { name: String::from("i"), value: AST::CallMethod { object: AST::AccessVariable { name: String::from("i") }.into_boxed(), name: String::from("+"), arguments: 
+                        [AST::Integer(1).into_boxed()].to_vec() }.into_boxed() }.into_boxed(), 
+                    AST::AccessVariable { name: String::from("e") }.into_boxed()].to_vec()).into_boxed() }.into_boxed() }.into_boxed()].to_vec());
+        let mut program = Runtime::new();
+        program.push_env();
+        program.eval(decl);
+        let mut access0 = AST::AccessArray{array:AST::AccessVariable{name: String::from("arr")}.into_boxed(), index:AST::Integer(0).into_boxed()};
+        let access0_ptr = program.eval(access0);
+        let mut access1 = AST::AccessArray{array:AST::AccessVariable{name: String::from("arr")}.into_boxed(), index:AST::Integer(1).into_boxed()};
+        let access1_ptr = program.eval(access1);
+        assert!(std::matches!(program.heap.deref(access0_ptr), Value::Int(0)));
+        assert!(std::matches!(program.heap.deref(access1_ptr), Value::Int(1)));
     }
 }
