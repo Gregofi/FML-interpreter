@@ -1,6 +1,5 @@
 use crate::{ast::AST, heap::Pointer};
 use crate::heap::Heap;
-use std::io::Write;
 use std::{collections::HashMap, collections::LinkedList, mem};
 
 #[derive(Debug)]
@@ -18,7 +17,7 @@ pub enum Value {
 }
 
 #[derive(Clone)]
-struct Function {
+pub struct Function {
     parameters: Vec<String>,
     body: Box<AST>,
 }
@@ -184,7 +183,7 @@ impl Runtime {
                 res += "]";
                 res
             },
-            Value::Object{members, methods, extends} => todo!(),
+            Value::Object{members:_, methods:_, extends:_} => panic!("Printing objects is not yet supported"),
         }
     }
 
@@ -234,6 +233,8 @@ impl Runtime {
         self.heap.alloc_array(size, values)
     }
 
+    /// Evaluates operator calls.
+    /// TODO: This code is very ugly follows the opposite of DRY.
     fn eval_operator(&mut self, left: Value, right: Value, name: String) -> Pointer {
         match left {
             Value::Int(v_left) => {
@@ -259,8 +260,8 @@ impl Runtime {
                     _ => panic!("Operators can only be used on ints.")
                 }
             }
-            Value::Object{members, methods, extends} => {
-                todo!();
+            Value::Object{members:_, methods:_, extends:_} => {
+                panic!("Internal error, can't call operators on objects.");
             }
             Value::Unit => {
                 match right {
@@ -307,7 +308,7 @@ impl Runtime {
         self.heap.alloc(val)
     }
 
-    fn eval_method_call(&mut self, function: &Function, members: &mut HashMap<String, Pointer>, arguments: Vec<Box<AST>>, extends: Pointer, this: Pointer) -> Pointer {
+    fn eval_method_call(&mut self, function: &Function, arguments: Vec<Box<AST>>, this: Pointer) -> Pointer {
         self.save_env();
         if function.parameters.len() != arguments.len() {
             panic!("Wrong number of arguments in method call, expected {}, got {}", function.parameters.len(), arguments.len());
@@ -386,7 +387,7 @@ impl Runtime {
                 let object_ptr = self.eval(*object);
                 let object = self.heap.deref_mut(object_ptr);
                 match object {
-                    Value::Object{members, methods, extends} => {
+                    Value::Object{members, methods:_, extends:_} => {
                         members.insert(field, value_ptr);
                         value_ptr
                     },
@@ -396,7 +397,7 @@ impl Runtime {
             AST::AssignArray { array, index, value } => {
                 self.eval_assign_array(array, index, value)
             }
-            AST::Function { name, parameters, body } => {
+            AST::Function{name:_, parameters:_, body:_}=> {
                 panic!("Function can only be declared as top level statement.");
             }
 
@@ -407,9 +408,9 @@ impl Runtime {
                 let object_ptr = self.eval(*object);
                 let object = self.heap.deref(object_ptr).clone();
                 match object {
-                    Value::Object{mut members, methods, extends} => {
+                    Value::Object{members: _, methods, extends:_} => {
                         let method = methods.get(&name).expect("Call to undefined method.");
-                        self.eval_method_call(method, &mut members, arguments, extends, object_ptr)
+                        self.eval_method_call(method, arguments, object_ptr)
                     },
                     _ => {
                         let right_ptr = self.eval(*arguments[0].clone());
@@ -473,7 +474,7 @@ impl Runtime {
             _ => panic!("Arrays can only be indexed by integer."),
         };
 
-        let (size, data) = match self.heap.deref(ptr_array) {
+        let (_, data) = match self.heap.deref(ptr_array) {
             Value::Array{size, data} => (size, *data),
             _ => panic!("Only arrays can be indexated."),
         };
@@ -682,9 +683,9 @@ mod test {
         let mut program = Runtime::new();
         program.push_env();
         program.eval(decl);
-        let mut access0 = AST::AccessArray{array:AST::AccessVariable{name: String::from("arr")}.into_boxed(), index:AST::Integer(0).into_boxed()};
+        let access0 = AST::AccessArray{array:AST::AccessVariable{name: String::from("arr")}.into_boxed(), index:AST::Integer(0).into_boxed()};
         let access0_ptr = program.eval(access0);
-        let mut access1 = AST::AccessArray{array:AST::AccessVariable{name: String::from("arr")}.into_boxed(), index:AST::Integer(1).into_boxed()};
+        let access1 = AST::AccessArray{array:AST::AccessVariable{name: String::from("arr")}.into_boxed(), index:AST::Integer(1).into_boxed()};
         let access1_ptr = program.eval(access1);
         assert!(std::matches!(program.heap.deref(access0_ptr), Value::Int(0)));
         assert!(std::matches!(program.heap.deref(access1_ptr), Value::Int(1)));

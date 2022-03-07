@@ -9,13 +9,9 @@ pub struct Pointer{
 }
 
 extern "C" {
-    #[link(name="heap_init", kind="static")]
     fn heap_init();
-    #[link(name="heap_alloc", kind="static")]
     fn heap_alloc(bytes: i32) -> *mut c_void;
-    #[link(name="heap_free", kind="static")]
-    fn heap_free(ptr: *mut c_void) -> bool;
-    #[link(name="heap_done", kind="static")]
+    // fn heap_free(ptr: *mut c_void) -> bool;
     fn heap_done() -> i32;
 }
 

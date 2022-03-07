@@ -36,11 +36,9 @@ pub enum AST {
 
 impl AST {
     /** To make it easier to create boxes */
+    #[allow(dead_code)]
     pub fn into_boxed(self) -> Box<Self> {
         Box::new(self)
     }
 
-    pub fn variable(name: String, value: AST) -> Self {
-        Self::Variable{name, value: value.into_boxed()}
-    }
 }
