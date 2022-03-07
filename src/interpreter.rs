@@ -1,5 +1,6 @@
 use crate::{ast::AST, heap::Pointer};
 use crate::heap::Heap;
+use std::io::Write;
 use std::{collections::HashMap, collections::LinkedList, mem};
 
 #[derive(Debug)]
@@ -7,13 +8,13 @@ pub enum Error {
     VariableMissing,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Value {
     Int(i32),
     Boolean(bool),
     Unit,
     Array{size: i32, data: *mut Pointer},
-    Object(),
+    Object{members: HashMap<String, Pointer>, methods: HashMap<String, Function>, extends: Pointer},
 }
 
 #[derive(Clone)]
@@ -164,8 +165,9 @@ impl Runtime {
             _ => true,
         }
     }
+
     fn value_to_str(&mut self, ptr: Pointer) -> String {
-        let derefered_val = *self.heap.deref(ptr);
+        let derefered_val = self.heap.deref(ptr).clone();
         match derefered_val {
             Value::Int(val) => val.to_string(),
             Value::Boolean(val) => val.to_string(),
@@ -182,7 +184,7 @@ impl Runtime {
                 res += "]";
                 res
             },
-            Value::Object() => todo!(),
+            Value::Object{members, methods, extends} => todo!(),
         }
     }
 
@@ -213,7 +215,6 @@ impl Runtime {
                 }
                 _ => {
                     return_val = self.eval(*stmt);
-                    ()
                 }
             }
         };
@@ -258,7 +259,7 @@ impl Runtime {
                     _ => panic!("Operators can only be used on ints.")
                 }
             }
-            Value::Object() => {
+            Value::Object{members, methods, extends} => {
                 todo!();
             }
             Value::Unit => {
@@ -267,8 +268,59 @@ impl Runtime {
                     _ => self.heap.get_bool(false),
                 }
             }
+            Value::Boolean(left_b) => {
+                match right {
+                    Value::Boolean(right_b) => {
+                        match name.as_str() {
+                            "|" => self.heap.get_bool(left_b || right_b),
+                            "&" => self.heap.get_bool(left_b && right_b),
+                            "==" => self.heap.get_bool(left_b == right_b),
+                            "!=" => self.heap.get_bool(left_b != right_b),
+                            _ => panic!("Unknown operator.")
+                        }
+
+                    }
+                    _ => panic!("Wrong arguments.")
+                }
+            }
             _ => panic!("Can only call methods on objects.")
         }
+    }
+
+    pub fn eval_object(&mut self, extends: Box<AST>, members_ast: Vec<Box<AST>>) -> Pointer {
+        let mut methods = HashMap::new();
+        let mut members = HashMap::new();
+        for member in members_ast.iter() {
+            match *member.clone() {
+                AST::Variable { name, value } => {
+                    let val = self.eval(*value);
+                    members.insert(name, val);
+                }
+                AST::Function { name, parameters, body } => {
+                    methods.insert(name, Function{parameters, body});
+                }
+                _ => panic!("Object can only contain variables or methods.")
+            };
+        }
+        let extends = self.eval(*extends);
+        let val = Value::Object{members, methods, extends};
+        self.heap.alloc(val)
+    }
+
+    fn eval_method_call(&mut self, function: &Function, members: &mut HashMap<String, Pointer>, arguments: Vec<Box<AST>>, extends: Pointer, this: Pointer) -> Pointer {
+        self.save_env();
+        if function.parameters.len() != arguments.len() {
+            panic!("Wrong number of arguments in method call, expected {}, got {}", function.parameters.len(), arguments.len());
+        }
+        // Eval argument and match them with parameters.
+        for (name, val) in function.parameters.clone().into_iter().zip(arguments.into_iter()) {
+            let result= self.eval(*val);
+            self.add_var(name, result);
+        }
+        self.add_var(String::from("this"), this);
+        let result = self.eval(*function.body.clone());
+        self.restore_env();
+        result
     }
 
     pub fn eval(&mut self, ast: AST) -> Pointer {
@@ -276,23 +328,34 @@ impl Runtime {
             AST::Integer(val) => {
                 self.heap.get_int(val)
             }
-          
+
             AST::Boolean(val) => self.heap.get_bool(val),
-            
+
             AST::Null => self.heap.get_unit(),
-         
+
             AST::Variable { name, value } => {
                 let evaluated_val = self.eval(*value);
                 self.add_var(name, evaluated_val);
                 evaluated_val
             },
-           
+
             AST::Array { size, value } => self.eval_array(size, value),
-            AST::Object { extends, members } => todo!(),
+            AST::Object { extends, members } => {
+                self.eval_object(extends, members)
+            },
             AST::AccessVariable { name } => {
                 self.fetch_var(&name).expect("Variable has not been declared.")
             },
-            AST::AccessField { object, field } => todo!(),
+            AST::AccessField { object, field } => {
+                let obj_ptr = self.eval(*object);
+                let obj = self.heap.deref(obj_ptr).clone();
+                match obj {
+                    Value::Object{members, methods:_, extends:_} => {
+                        members[&field]
+                    }
+                    _ => panic!("Can't access fields on non objects!")
+                }
+            },
             AST::AccessArray { array, index } => {
                 let array_ptr = self.eval(*array);
                 let index_ptr = self.eval(*index);
@@ -311,14 +374,25 @@ impl Runtime {
                     _ => panic!("Can't index array with non-int type.")
                 }
             },
-         
+
             AST::AssignVariable { name, value } => {
                 let evaluated = self.eval(*value);
                 self.assign_to_var(&name, evaluated);
                 evaluated
             },
 
-            AST::AssignField { object, field, value } => todo!(),
+            AST::AssignField { object, field, value } => {
+                let value_ptr = self.eval(*value);
+                let object_ptr = self.eval(*object);
+                let object = self.heap.deref_mut(object_ptr);
+                match object {
+                    Value::Object{members, methods, extends} => {
+                        members.insert(field, value_ptr);
+                        value_ptr
+                    },
+                    _ => panic!("Can't assign fields to non-objects.")
+                }
+            },
             AST::AssignArray { array, index, value } => {
                 self.eval_assign_array(array, index, value)
             }
@@ -333,10 +407,13 @@ impl Runtime {
                 let object_ptr = self.eval(*object);
                 let object = self.heap.deref(object_ptr).clone();
                 match object {
-                    Value::Object() => todo!(),
+                    Value::Object{mut members, methods, extends} => {
+                        let method = methods.get(&name).expect("Call to undefined method.");
+                        self.eval_method_call(method, &mut members, arguments, extends, object_ptr)
+                    },
                     _ => {
                         let right_ptr = self.eval(*arguments[0].clone());
-                        let right_operand = *self.heap.deref(right_ptr);
+                        let right_operand = self.heap.deref(right_ptr).clone();
                         self.eval_operator(object, right_operand, name)
                     }
                 }
@@ -405,7 +482,6 @@ impl Runtime {
     }
 }
 
-
 pub fn interpret(ast: AST) {
     let mut p = Runtime::new();
     p.push_env();
@@ -419,7 +495,7 @@ pub fn interpret(ast: AST) {
 
 
 
-/// The tests cannot be run in parallel, since the C code will die if so.
+/// The tests cannot be run in parallel. The used C code uses global variables which will go crazy.
 #[cfg(test)]
 mod test {
     use super::*;
